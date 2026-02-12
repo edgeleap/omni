@@ -2,40 +2,40 @@
 
 > The Ultimate Git Experience in the Agentic Era
 
-<a href="https://github.com/edgeleap/diffsense/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/edgeleap/omni?color=4724AB&style=for-the-badge" alt="latest release" /></a>
+<a href="https://github.com/edgeleap/omni/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/edgeleap/omni?color=4724AB&style=for-the-badge" alt="latest release" /></a>
 <a href="https://github.com/edgeleap/omni/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/edgeleap/omni/total?color=5832E2&style=for-the-badge" alt="total downloads" /></a>
 
 ### About
 
-Omni is your side-kick copilot for git. It enriches your git history automatically and ensure nothing is missed in the knowledge graph of your git project. For every git action you or your agent makes. Omni compounds the history knowledge graph. For every subsequent action you make, your agentic AI will be able to reason with compounding clearity. 
+Omni is your side-kick copilot for git. It enriches your git history automatically and ensures nothing is missed in the knowledge graph of your git project. For every git action you or your agent makes, Omni compounds the history knowledge graph. For every subsequent action you make, your agentic AI will be able to reason with compounding clarity.
 
-### Why omni
+### Why Omni
 
-1. Since omni works in its own context window more like a sub agent. you avoid consuming context window bandwidth on git and enrichment. (For CLI, IDE, Agent, CI/CD )
-2. Omni has a higher enrichment quality benchnark than any skill + mcp rig that you can setup on your own. Omni is the result of a vast amount of propriatry research and thousands of hours of a/b testing to get the highest possible enrichment benchmark in the industry. Since enrichment compounds, essentially your code base will become better over time by using omni. 
-3. Prune your PR's group commits that belong in in one commit. go from 100s of commits to 10 razor sharp commits. Or go from a messy refactor to multiple commits that belong together. (Git worktrees support coming soon)
+1. Since Omni works in its own context window, more like a sub-agent, you avoid consuming context window bandwidth on git and enrichment. (For CLI, IDE, Agent, CI/CD)
+2. Omni has a higher enrichment quality benchmark than any skill + MCP rig that you can set up on your own. Omni is the result of a vast amount of proprietary research and thousands of hours of A/B testing to achieve the highest possible enrichment benchmark in the industry. Since enrichment compounds, essentially your codebase will become better over time by using Omni.
+3. Prune your PRs: group commits that belong in one commit. Go from 100s of commits to 10 razor-sharp commits, or go from a messy refactor to multiple commits that belong together. (Git worktrees support coming soon)
 
 
-### Supported operating systems: 
+### Supported Operating Systems
 
 - macOS Apple Silicon / Intel
-- Linux x64 / ARM 
+- Linux x64 / ARM
 - Windows x64 / ARM
 
 ### Install
 
 **macOS / Linux:**
 
-`curl -fsSL https://edgeleap.github.io/omni.sh | bash`
+`curl -fsSL [https://edgeleap.github.io/omni.sh](https://edgeleap.github.io/omni.sh) | bash`
 
 **Windows (PowerShell):**
 
-`irm https://edgeleap.github.io/omni.ps1 | iex`
+`irm [https://edgeleap.github.io/omni.ps1](https://edgeleap.github.io/omni.ps1) | iex`
 
 
-### CLI commands
+### CLI Commands
 
-See [CLI_Command_Reference.md](CLI_Command_Reference.md) for full command references. 
+See [CLI_Command_Reference.md](CLI_Command_Reference.md) for full command references.
 
 **Commit**
 
@@ -60,20 +60,20 @@ Flags:
 - `--yes` (CI/non-interactive apply)
 
 **Release**
- 
-- `omni release --preview`  
-- `omni release --edit`  
-- `omni release --apply` 
- 
+
+- `omni release --preview`
+- `omni release --edit`
+- `omni release --apply`
+
 Flags:
 - `--json` (agent output)
 - `--yes` (CI/non-interactive apply)
 - `--draft` (GitHub release draft)
-- `--tag v1.2.3` (Using explicit tag)
- 
+- `--tag v1.2.3` (use explicit tag)
+
 ### Agents
 
-Omni integrates with coding agents at two levels: **hooks** (system-triggered, hard enforcement) and **instructions** (advisory rules the agent follows). Some agents support both, some only instructions.
+Omni integrates with coding agents at two levels: **hooks** (system-triggered, hard enforcement) and **instructions** (advisory rules the agent follows). Some agents support both; some support only instructions.
 
 | Agent | Hooks | Instructions | Enforcement | Integration |
 | --- | --- | --- | --- | --- |
@@ -94,7 +94,7 @@ Omni integrates with coding agents at two levels: **hooks** (system-triggered, h
 - **Agent supports hooks?** → Use the intercept script to hard-block `git commit` / `gh pr create`, plus an instruction file as backup. The agent literally cannot bypass `omni`.
 - **Agent has sandbox/policy rules?** (Codex CLI) → Use `execpolicy` deny rules to block git commands, plus `AGENTS.md` to teach the agent what to use instead.
 - **Agent doesn't auto-commit?** (Codex App) → No interception needed. Teach the agent about `omni` through a Skill, and it uses `omni` when you ask it to commit.
-- **Advisory only?** (Antigravity, Kimi, Qwen) → Instruction files are your only option. The agent *should* follow them but there's no system-level guarantee.
+- **Advisory only?** (Antigravity, Kimi, Qwen) → Instruction files are your only option. The agent *should* follow them, but there's no system-level guarantee.
 
 ### CI/CD
 
@@ -106,3 +106,5 @@ omni release --apply --json
 ```
 
 > Note: GitHub release creation requires `GITHUB_TOKEN`/`GH_TOKEN` (GitHub Actions provides `GITHUB_TOKEN` automatically).
+
+ 
