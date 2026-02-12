@@ -7,13 +7,13 @@
 
 ### About
 
-Omni is your side-kick copilot for git. It enriches your git history automatically and ensures nothing is missed in the knowledge graph of your git project. For every git action you or your agent makes, Omni compounds the history knowledge graph. For every subsequent action you make, your agentic AI will be able to reason with compounding clarity.
+Omni is a copilot for git. It automatically enriches your commit history into a knowledge graph. Every git action you or your agent makes compounds that graph. The more you use it, the sharper your AI's reasoning becomes.
 
 ### Why Omni
 
-1. Since Omni works in its own context window, more like a sub-agent, you avoid consuming context window bandwidth on git and enrichment. (For CLI, IDE, Agent, CI/CD)
-2. Omni has a higher enrichment quality benchmark than any skill + MCP rig that you can set up on your own. Omni is the result of a vast amount of proprietary research and thousands of hours of A/B testing to achieve the highest possible enrichment benchmark in the industry. Since enrichment compounds, essentially your codebase will become better over time by using Omni.
-3. Prune your PRs: group commits that belong in one commit. Go from 100s of commits to 10 razor-sharp commits, or go from a messy refactor to multiple commits that belong together. (Git worktrees support coming soon)
+1. Omni runs in its own context window — a dedicated sub-agent — so your main agent never wastes tokens on git housekeeping and enrichment. Works across CLI, IDE, Agent, and CI/CD.
+2. Omni outperforms any skill + MCP rig you can build yourself — backed by proprietary research and thousands of hours of A/B testing. Because enrichment compounds, your codebase improves automatically over time.
+3. Prune your PRs: collapse 100s of commits into 10 razor-sharp commits, or split a messy refactor into clean, logical chunks. (Git worktree support coming soon.)
 
 
 ### Supported Operating Systems
