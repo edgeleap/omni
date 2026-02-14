@@ -13,7 +13,7 @@ Omni is a copilot for git. It automatically enriches your commit history into a 
 
 1. Omni runs in its own context window — a dedicated sub-agent — so your main agent never wastes tokens on git housekeeping and enrichment. Works across CLI, IDE, Agent, and CI/CD.
 2. Omni outperforms any skill + MCP rig you can build yourself — backed by proprietary research and thousands of hours of A/B testing. Because enrichment compounds, your codebase improves automatically over time.
-3. Prune your PRs: collapse 100s of commits into 10 razor-sharp commits, or split a messy refactor into clean, logical chunks. (Git worktree support coming soon.)
+3. Prune your PRs: collapse 100s of commits into 10 razor-sharp commits, or split a messy refactor with 100s of file changes into clean, logical commits. (Git worktree support coming soon.)
 
 
 ### Supported Operating Systems
