@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to release (e.g., v0.2.5)'
+        description: 'Tag to release (e.g., v0.2.6)'
         required: true
         type: string
 
 permissions:
-  contents: write  # needed for creating releases on the public repo
+  contents: write  # needed to push version bump commit and create releases
 
 jobs:
   detect-channel:
@@ -47,13 +47,12 @@ jobs:
       version: ${{ steps.extract.outputs.version }}
       sha: ${{ steps.bump.outputs.sha }}
     steps:
-      - name: Checkout PRIVATE repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: edgeleap/omni-app
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          fetch-depth: 0
           ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
 
       - name: Extract version from tag
         id: extract
@@ -76,29 +75,38 @@ jobs:
           jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tauri.conf.json.tmp && mv tauri.conf.json.tmp src-tauri/tauri.conf.json
           echo "Updated src-tauri/tauri.conf.json"
           
-          # Update src-tauri/Cargo.toml
+          # Update src-tauri/Cargo.toml (using sed for TOML)
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
           echo "Updated src-tauri/Cargo.toml"
           
+          # Verify all versions match
           PKG_VERSION=$(jq -r '.version' package.json)
           TAURI_VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
           CARGO_VERSION=$(grep '^version = ' src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          
+          echo "Versions after bump:"
+          echo "  package.json: $PKG_VERSION"
+          echo "  tauri.conf.json: $TAURI_VERSION"
+          echo "  Cargo.toml: $CARGO_VERSION"
           
           if [ "$VERSION" != "$PKG_VERSION" ] || [ "$VERSION" != "$TAURI_VERSION" ] || [ "$VERSION" != "$CARGO_VERSION" ]; then
             echo "Version bump failed!"
             exit 1
           fi
           
+          # Check if there are changes to commit
           if git diff --quiet; then
             echo "No version changes needed (already at $VERSION)"
             echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           else
+            # Commit and push version bump
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
             git commit -m "chore: bump version to $VERSION"
             git push origin HEAD:main
             
+            # Update tag to point to new commit
             NEW_SHA=$(git rev-parse HEAD)
             git tag -f "v$VERSION" "$NEW_SHA"
             git push origin "v$VERSION" --force
@@ -127,26 +135,31 @@ jobs:
             os_name: macos
             arch_name: arm64
             rust_target: aarch64-apple-darwin
+            platform_key: darwin-aarch64
           - runner: macos-15-intel
             os_name: macos
             arch_name: x64
             rust_target: x86_64-apple-darwin
+            platform_key: darwin-x86_64
           - runner: ubuntu-24.04
             os_name: linux
             arch_name: x64
             rust_target: x86_64-unknown-linux-gnu
+            platform_key: linux-x86_64
           - runner: windows-latest
             os_name: windows
             arch_name: x64
             rust_target: x86_64-pc-windows-msvc
+            platform_key: windows-x86_64
           - runner: windows-latest
             os_name: windows
             arch_name: arm64
             rust_target: aarch64-pc-windows-msvc
+            platform_key: windows-aarch64
 
     runs-on: ${{ matrix.runner }}
     steps:
-      - name: Checkout PRIVATE repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           repository: edgeleap/omni-app
@@ -163,7 +176,11 @@ jobs:
         if: matrix.os_name == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -178,20 +195,28 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Ensure Cargo.lock exists
-        run: cd src-tauri && cargo generate-lockfile
+      - name: Ensure Cargo.lock exists (no dependency upgrades)
+        run: |
+          cd src-tauri
+          cargo generate-lockfile
         shell: bash
 
       - name: Build sidecar (macOS ARM64 only)
         if: matrix.rust_target == 'aarch64-apple-darwin'
-        run: cd core && npm install && npm run pkg:mac
+        run: |
+          cd core
+          npm install
+          npm run pkg:mac
 
       - name: Remove sidecar from config (non-ARM64)
         if: matrix.rust_target != 'aarch64-apple-darwin'
         shell: bash
         run: |
+          echo "Removing externalBin from tauri.conf.json (sidecar only available on macOS ARM64)"
           jq 'del(.bundle.externalBin)' src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp
           mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+          echo "Updated config:"
+          cat src-tauri/tauri.conf.json | jq '.bundle'
 
       - name: Build Tauri app
         env:
@@ -202,18 +227,24 @@ jobs:
       - name: Build omni-cli (Rust)
         if: matrix.os_name != 'windows'
         shell: bash
-        run: cargo build --manifest-path src-tauri/Cargo.toml --release --bin omni-cli --target ${{ matrix.rust_target }}
+        run: |
+          cargo build --manifest-path src-tauri/Cargo.toml \
+            --release \
+            --bin omni-cli \
+            --target ${{ matrix.rust_target }}
 
       - name: Build omni-cli (Rust) (Windows)
         if: matrix.os_name == 'windows'
         shell: pwsh
-        run: cargo build --manifest-path src-tauri/Cargo.toml --release --bin omni-cli --target ${{ matrix.rust_target }}
+        run: |
+          cargo build --manifest-path src-tauri/Cargo.toml --release --bin omni-cli --target ${{ matrix.rust_target }}
 
       - name: Package release (macOS)
         if: matrix.os_name == 'macos'
         run: |
           mkdir -p dist
-          tar -czf "dist/omni-${{ matrix.os_name }}-${{ matrix.arch_name }}.tar.gz" -C "src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos" "Omni.app"
+          tar -czf "dist/omni-${{ matrix.os_name }}-${{ matrix.arch_name }}.tar.gz" \
+            -C "src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos" "Omni.app"
 
       - name: Package release (Linux)
         if: matrix.os_name == 'linux'
@@ -235,21 +266,30 @@ jobs:
         run: |
           mkdir -p dist
           CLI_SRC="src-tauri/target/${{ matrix.rust_target }}/release/omni-cli"
+          if [ ! -f "$CLI_SRC" ]; then
+            echo "omni-cli not found at $CLI_SRC" >&2
+            exit 1
+          fi
           STAGE_DIR="dist/_stage_cli_${{ matrix.os_name }}_${{ matrix.arch_name }}"
-          mkdir -p "$STAGE_DIR"
+          rm -rf "$STAGE_DIR" && mkdir -p "$STAGE_DIR"
           cp "$CLI_SRC" "$STAGE_DIR/omni"
           chmod +x "$STAGE_DIR/omni" || true
           tar -czf "dist/omni-cli-${{ matrix.os_name }}-${{ matrix.arch_name }}.tar.gz" -C "$STAGE_DIR" .
+          rm -rf "$STAGE_DIR"
 
       - name: Package CLI-only archive (Windows)
         if: matrix.os_name == 'windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path dist
           $cliSrc = "src-tauri/target/${{ matrix.rust_target }}/release/omni-cli.exe"
+          if (!(Test-Path $cliSrc)) { throw "omni-cli.exe not found at $cliSrc" }
           $stage = "dist/_stage_cli_${{ matrix.os_name }}_${{ matrix.arch_name }}"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item $cliSrc (Join-Path $stage "omni.exe")
           Compress-Archive -Path "$stage/*" -DestinationPath "dist/omni-cli-${{ matrix.os_name }}-${{ matrix.arch_name }}.zip"
+          Remove-Item -Recurse -Force $stage
 
       - name: Sign release archive
         shell: bash
@@ -258,7 +298,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           ARCHIVE=$(ls dist/omni-${{ matrix.os_name }}-${{ matrix.arch_name }}.*)
-          bun run tauri signer sign "$ARCHIVE" --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          bun run tauri signer sign "$ARCHIVE" \
+            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
 
       - name: Sign CLI-only archive
         shell: bash
@@ -267,13 +309,17 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           CLI_ARCHIVE=$(ls dist/omni-cli-${{ matrix.os_name }}-${{ matrix.arch_name }}.*)
-          bun run tauri signer sign "$CLI_ARCHIVE" --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          bun run tauri signer sign "$CLI_ARCHIVE" \
+            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: omni-${{ matrix.os_name }}-${{ matrix.arch_name }}
-          path: dist/*
+          path: |
+            dist/omni-${{ matrix.os_name }}-${{ matrix.arch_name }}.*
+            dist/omni-cli-${{ matrix.os_name }}-${{ matrix.arch_name }}.*
 
       - name: Publish to public repo
         uses: softprops/action-gh-release@v2
@@ -283,15 +329,16 @@ jobs:
           prerelease: ${{ needs.detect-channel.outputs.prerelease }}
           generate_release_notes: false
           body_path: release_body.txt
-          files: dist/*
+          files: |
+            dist/omni-${{ matrix.os_name }}-${{ matrix.arch_name }}.*
+            dist/omni-cli-${{ matrix.os_name }}-${{ matrix.arch_name }}.*
           token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
 
   publish-update-json:
     needs: [detect-channel, bump-version, build-and-release]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout PRIVATE repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: edgeleap/omni-app
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
@@ -309,19 +356,69 @@ jobs:
           JSON_FILE: ${{ needs.detect-channel.outputs.json_file }}
         run: |
           VERSION="${{ needs.bump-version.outputs.version }}"
+          
+          echo "Generating $JSON_FILE for $CHANNEL channel (v$VERSION)"
+          
+          # Build platforms JSON dynamically
           PLATFORMS=""
           FIRST=true
           
-          # Simplified platform appending block for brevity, using macOS ARM64 as example
+          # Check for macOS ARM64
           if [ -f "artifacts/omni-macos-arm64.tar.gz.sig" ]; then
             SIG=$(cat artifacts/omni-macos-arm64.tar.gz.sig)
             [ "$FIRST" = false ] && PLATFORMS+=","
-            PLATFORMS+="\n    \"darwin-aarch64\": {\n      \"url\": \"https://github.com/edgeleap/omni/releases/download/${{ inputs.tag_name }}/omni-macos-arm64.tar.gz\",\n      \"signature\": \"${SIG}\"\n    }"
+            PLATFORMS+="\n    \"darwin-aarch64\": {"
+            PLATFORMS+="\n      \"url\": \"https://github.com/edgeleap/omni/releases/download/${{ inputs.tag_name }}/omni-macos-arm64.tar.gz\","
+            PLATFORMS+="\n      \"signature\": \"${SIG}\""
+            PLATFORMS+="\n    }"
             FIRST=false
           fi
           
-          # NOTE: Add the rest of your `publish-update-json` bash blocks here (Linux, Windows) just like your original file!
+          # Check for macOS x64
+          if [ -f "artifacts/omni-macos-x64.tar.gz.sig" ]; then
+            SIG=$(cat artifacts/omni-macos-x64.tar.gz.sig)
+            [ "$FIRST" = false ] && PLATFORMS+=","
+            PLATFORMS+="\n    \"darwin-x86_64\": {"
+            PLATFORMS+="\n      \"url\": \"https://github.com/edgeleap/omni/releases/download/${{ inputs.tag_name }}/omni-macos-x64.tar.gz\","
+            PLATFORMS+="\n      \"signature\": \"${SIG}\""
+            PLATFORMS+="\n    }"
+            FIRST=false
+          fi
           
+          # Check for Linux x64
+          if [ -f "artifacts/omni-linux-x64.tar.gz.sig" ]; then
+            SIG=$(cat artifacts/omni-linux-x64.tar.gz.sig)
+            [ "$FIRST" = false ] && PLATFORMS+=","
+            PLATFORMS+="\n    \"linux-x86_64\": {"
+            PLATFORMS+="\n      \"url\": \"https://github.com/edgeleap/omni/releases/download/${{ inputs.tag_name }}/omni-linux-x64.tar.gz\","
+            PLATFORMS+="\n      \"signature\": \"${SIG}\""
+            PLATFORMS+="\n    }"
+            FIRST=false
+          fi
+          
+          # Check for Windows x64
+          if [ -f "artifacts/omni-windows-x64.zip.sig" ]; then
+            SIG=$(cat artifacts/omni-windows-x64.zip.sig)
+            [ "$FIRST" = false ] && PLATFORMS+=","
+            PLATFORMS+="\n    \"windows-x86_64\": {"
+            PLATFORMS+="\n      \"url\": \"https://github.com/edgeleap/omni/releases/download/${{ inputs.tag_name }}/omni-windows-x64.zip\","
+            PLATFORMS+="\n      \"signature\": \"${SIG}\""
+            PLATFORMS+="\n    }"
+            FIRST=false
+          fi
+          
+          # Check for Windows ARM64
+          if [ -f "artifacts/omni-windows-arm64.zip.sig" ]; then
+            SIG=$(cat artifacts/omni-windows-arm64.zip.sig)
+            [ "$FIRST" = false ] && PLATFORMS+=","
+            PLATFORMS+="\n    \"windows-aarch64\": {"
+            PLATFORMS+="\n      \"url\": \"https://github.com/edgeleap/omni/releases/download/${{ inputs.tag_name }}/omni-windows-arm64.zip\","
+            PLATFORMS+="\n      \"signature\": \"${SIG}\""
+            PLATFORMS+="\n    }"
+            FIRST=false
+          fi
+          
+          # Write JSON file (filename depends on channel)
           cat > "$JSON_FILE" << EOF
           {
             "version": "${VERSION}",
@@ -331,6 +428,9 @@ jobs:
             }
           }
           EOF
+          
+          echo "Generated $JSON_FILE:"
+          cat "$JSON_FILE"
 
       - name: Publish update JSON to versioned release
         uses: softprops/action-gh-release@v2
@@ -340,3 +440,150 @@ jobs:
           prerelease: ${{ needs.detect-channel.outputs.prerelease }}
           files: ${{ needs.detect-channel.outputs.json_file }}
           token: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+
+      # For beta releases, also update the pinned 'latest-beta' release
+      # This provides a stable URL for the app to check: /releases/download/latest-beta/latest-beta.json
+      - name: Update pinned latest-beta release
+        if: needs.detect-channel.outputs.is_beta == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+        run: |
+          VERSION="${{ needs.bump-version.outputs.version }}"
+          echo "Updating pinned latest-beta release to v$VERSION"
+          
+          # Delete existing latest-beta release if it exists
+          gh release delete latest-beta --repo edgeleap/omni --yes 2>/dev/null || true
+          
+          # Delete existing latest-beta tag if it exists
+          gh api -X DELETE /repos/edgeleap/omni/git/refs/tags/latest-beta 2>/dev/null || true
+          
+          # Create new latest-beta release with the JSON file
+          gh release create latest-beta \
+            --repo edgeleap/omni \
+            --title "Latest Beta (v$VERSION)" \
+            --notes "This release always points to the latest beta version. Current: v$VERSION" \
+            --prerelease \
+            latest-beta.json
+          
+          echo "Pinned latest-beta release updated to v$VERSION"
+
+  generate-release-notes:
+    needs: [bump-version, publish-update-json]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (for git context)
+        uses: actions/checkout@v4
+        with:
+          repository: edgeleap/omni-app
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: ${{ needs.bump-version.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Install Omni CLI-only
+        shell: bash
+        run: |
+          # Best-effort install (non-blocking). Network can be flaky on CI.
+          # `timeout` ensures this doesn't hang the whole workflow.
+          timeout 120s bash -c 'curl -fsSL https://edgeleap.github.io/omni.sh | bash -s -- --cli' || true
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Configure Omni settings for CI (OpenAI)
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.local/share/omni"
+          cat > "$HOME/.local/share/omni/settings.json" <<'JSON'
+          {
+            "schema_version": 2,
+            "general": {
+              "default_model": "remote:ci-openai",
+              "beta_channel": false,
+              "prompt_paths": {
+                "commit": "~/.omni/rules/commit.md",
+                "pr": "~/.omni/rules/pr.md",
+                "release": "~/.omni/rules/release.md"
+              }
+            },
+            "ollama": { "base_url": "", "connected": false, "models": [] },
+            "remote_models": [
+              {
+                "id": "ci-openai",
+                "name": "CI OpenAI",
+                "provider": "openai",
+                "model_id": "gpt-4o-mini",
+                "has_key": false,
+                "status": "disconnected"
+              }
+            ],
+            "repositories": {
+              "selected_repo": null,
+              "items": []
+            }
+          }
+          JSON
+
+      - name: Generate release notes (Omni)
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          # In this repo, published releases live in edgeleap/omni (public).
+          OMNI_RELEASE_HISTORY_REPO: edgeleap/omni
+          # Stable-only by default. Set to 1 if you want prerelease chains.
+          # OMNI_RELEASE_INCLUDE_PRERELEASES: "1"
+        run: |
+          set +e
+
+          # If key is missing, skip (non-blocking).
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "[generate-release-notes] OPENAI_API_KEY not set; skipping Omni release notes generation."
+            exit 0
+          fi
+
+          # If omni isn't installed, skip (non-blocking).
+          if ! command -v omni >/dev/null 2>&1; then
+            echo "[generate-release-notes] omni command not available; skipping."
+            exit 0
+          fi
+
+          # Omni needs to run inside a git repo. We already checked out the repo.
+          # Timeout protects against long-running API calls.
+          timeout 180s omni release --preview --tag "${{ inputs.tag_name }}" --json --yes > omni_release_plan.json
+          STATUS=$?
+          if [ $STATUS -ne 0 ]; then
+            echo "[generate-release-notes] Omni release notes generation failed (exit=$STATUS); skipping release body update."
+            exit 0
+          fi
+
+          jq -r '.title' omni_release_plan.json > /tmp/release_title.txt
+          jq -r '.body' omni_release_plan.json > /tmp/release_body.txt
+
+          TITLE=$(cat /tmp/release_title.txt)
+          if [ -z "$TITLE" ] || [ "$TITLE" = "null" ]; then
+            TITLE="Release ${{ inputs.tag_name }}"
+          fi
+
+          cat > RELEASE_NOTES.md <<EOF
+          # ${TITLE}
+
+          $(cat /tmp/release_body.txt)
+
+          _Release notes generated with Omni (AI) using gpt-4o-mini._
+          EOF
+
+          echo "Generated RELEASE_NOTES.md:" 
+          sed -n '1,60p' RELEASE_NOTES.md
+
+      - name: Update GitHub Release body (public repo)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+        run: |
+          # Only update if we actually generated notes.
+          if [ ! -f RELEASE_NOTES.md ]; then
+            echo "[generate-release-notes] RELEASE_NOTES.md not found; skipping release edit."
+            exit 0
+          fi
+
+          gh release edit "${{ inputs.tag_name }}" \
+            --repo edgeleap/omni \
+            --notes-file RELEASE_NOTES.md || true
